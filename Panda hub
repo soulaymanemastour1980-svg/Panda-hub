@@ -1,0 +1,138 @@
+-- PANDA HUB - BLUE LOCK ULTIMATE RADAR FIX
+local CoreGui = game:GetService("CoreGui")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LP = Players.LocalPlayer
+
+if CoreGui:FindFirstChild("PandaHubUI") then CoreGui.PandaHubUI:Destroy() end
+
+local Gui = Instance.new("ScreenGui", CoreGui)
+Gui.Name = "PandaHubUI"
+
+local Frame = Instance.new("Frame", Gui)
+Frame.Size = UDim2.new(0, 360, 0, 240)
+Frame.Position = UDim2.new(0.5, -180, 0.5, -120)
+Frame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+Frame.Active = true
+Frame.Draggable = true
+
+Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 12)
+local Stroke = Instance.new("UIStroke", Frame)
+Stroke.Thickness = 2
+Stroke.Color = Color3.fromRGB(255, 0, 0)
+
+local Top = Instance.new("Frame", Frame)
+Top.Size = UDim2.new(1, 0, 0, 40)
+Top.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+Instance.new("UICorner", Top).CornerRadius = UDim.new(0, 12)
+
+local Title = Instance.new("TextLabel", Top)
+Title.Size = UDim2.new(1, 0, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "Panda Hub - Blue Lock"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 15
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local Close = Instance.new("TextButton", Top)
+Close.Size = UDim2.new(0, 40, 0, 40)
+Close.Position = UDim2.new(1, -40, 0, 0)
+Close.BackgroundTransparency = 1
+Close.Text = "X"
+Close.TextColor3 = Color3.fromRGB(200, 200, 200)
+Close.Font = Enum.Font.GothamBold
+Close.TextSize = 14
+Close.MouseButton1Click:Connect(function() Gui:Destroy() end)
+
+local function MakeBtn(posY, txt)
+    local b = Instance.new("TextButton", Frame)
+    b.Size = UDim2.new(0, 320, 0, 45)
+    b.Position = UDim2.new(0.5, -160, 0, posY)
+    b.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    b.Text = txt .. ": OFF"
+    b.TextColor3 = Color3.fromRGB(255, 100, 100)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 14
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+    return b
+end
+
+local BtnBall = MakeBtn(55, "Ball Magnet (جلب الكورة)")
+local BtnGoal = MakeBtn(115, "Auto Goal (التسجيل التلقائي)")
+
+local BallOn, GoalOn = false, false
+
+BtnBall.MouseButton1Click:Connect(function()
+    BallOn = not BallOn
+    BtnBall.Text = "Ball Magnet (جلب الكورة): " .. (BallOn and "ON" or "OFF")
+    BtnBall.TextColor3 = BallOn and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 100, 100)
+end)
+
+BtnGoal.MouseButton1Click:Connect(function()
+    GoalOn = not GoalOn
+    BtnGoal.Text = "Auto Goal (التسجيل التلقائي): " .. (GoalOn and "ON" or "OFF")
+    BtnGoal.TextColor3 = GoalOn and Color3.fromRGB(100, 255, 100) or Color3.fromRGB(255, 100, 100)
+end)
+
+task.spawn(function()
+    while Gui.Parent do
+        Stroke.Color = Color3.fromHSV(tick()%5/5, 1, 1)
+        task.wait(0.03)
+    end
+end)
+
+-- نظام رادار ذكي يلتقط الكرة الحقيقية بغض النظر عن اسمها في مابات بلو لوك
+local function FindTheBall()
+    for _, v in ipairs(workspace:GetDescendants()) do
+        if v:IsA("BasePart") and not v.Anchored then
+            -- استبعاد اللاعبين تماماً
+            local isPlayer = false
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Character and v:IsDescendantOf(p.Character) then
+                    isPlayer = true
+                    break
+                end
+            end
+            
+            if not isPlayer then
+                local name = v.Name:lower()
+                -- البحث عن أي جزء شكلة كروي أو يحتوي على كلمات الكرة
+                if name:find("ball") or name:find("football") or name:find("soccer") or v.Shape == Enum.PartType.Ball then
+                    return v
+                end
+            end
+        end
+    end
+    return nil
+end
+
+RunService.RenderStepped:Connect(function()
+    if LP.Character and LP.Character:FindFirstChild("HumanoidRootPart") then
+        local root = LP.Character.HumanoidRootPart
+        local ball = FindTheBall()
+        
+        if ball then
+            if BallOn then
+                pcall(function()
+                    ball.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    ball.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    ball.CFrame = root.CFrame + (root.CFrame.LookVector * 2.5) + Vector3.new(0, -1, 0)
+                end)
+            elseif GoalOn then
+                pcall(function()
+                    for _, g in ipairs(workspace:GetDescendants()) do
+                        if g.Name:lower():find("goal") or g.Name:lower():find("net") then
+                            if g:IsA("BasePart") then
+                                ball.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                                ball.CFrame = g.CFrame
+                                break
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+    end
+end)
