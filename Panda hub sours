@@ -1,0 +1,421 @@
+-- ============================================================
+-- ULTIMATE ANTI-KICK SYSTEM v5.0
+-- WORKS ON ANY GAME - NO UI - PURE PROTECTION
+-- ============================================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game.Workspace
+
+local player = Players.LocalPlayer
+if not player then return end
+
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+
+local kickProtectionActive = true
+local lastSafePosition = humanoidRootPart.CFrame
+local kickAttemptCount = 0
+local healthRestoreCount = 0
+
+-- ============================================================
+-- CORE PROTECTION 1: INSTANT HEALTH RESTORE
+-- ============================================================
+local function coreHealthProtection()
+    humanoid.HealthChanged:Connect(function()
+        if humanoid.Health <= 0 then
+            humanoid.MaxHealth = 100
+            humanoid.Health = 100
+            healthRestoreCount = healthRestoreCount + 1
+        end
+    end)
+    
+    RunService.Heartbeat:Connect(function()
+        if humanoid and humanoid.Parent then
+            if humanoid.Health <= 0 then
+                humanoid.Health = humanoid.MaxHealth
+            end
+            if humanoid.Health < humanoid.MaxHealth then
+                humanoid.Health = humanoid.MaxHealth
+            end
+        end
+    end)
+end
+
+-- ============================================================
+-- CORE PROTECTION 2: BLOCK DEATH STATE
+-- ============================================================
+local function coreDeathStateBlock()
+    humanoid.StateChanged:Connect(function(oldState, newState)
+        if newState == Enum.HumanoidStateType.Dead then
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            humanoid.Health = humanoid.MaxHealth
+        end
+        if newState == Enum.HumanoidStateType.Dying then
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            humanoid.Health = humanoid.MaxHealth
+        end
+    end)
+end
+
+-- ============================================================
+-- CORE PROTECTION 3: CHARACTER RESPAWN HANDLER
+-- ============================================================
+local function coreCharacterRespawn()
+    player.CharacterAdded:Connect(function(newCharacter)
+        character = newCharacter
+        humanoid = character:WaitForChild("Humanoid")
+        humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+        lastSafePosition = humanoidRootPart.CFrame
+        
+        wait(0.1)
+        
+        -- Reapply all protections to new character
+        coreHealthProtection()
+        coreDeathStateBlock()
+        coreHumanoidLock()
+        coreStateMonitor()
+        coreCharacterRespawn()
+    end)
+end
+
+-- ============================================================
+-- CORE PROTECTION 4: HUMANOID LOCK
+-- ============================================================
+local function coreHumanoidLock()
+    while true do
+        if humanoid and humanoid.Parent then
+            if humanoid.Health <= 0 then
+                humanoid.Health = humanoid.MaxHealth
+            end
+            
+            local state = humanoid:GetState()
+            if state == Enum.HumanoidStateType.Dead then
+                humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+            
+            if state == Enum.HumanoidStateType.Dying then
+                humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+        end
+        wait(0.05)
+    end
+end
+
+-- ============================================================
+-- CORE PROTECTION 5: STATE MONITOR
+-- ============================================================
+local function coreStateMonitor()
+    while true do
+        if character and humanoid and humanoid.Parent then
+            -- Prevent any negative health
+            if humanoid.Health < 0 then
+                humanoid.Health = humanoid.MaxHealth
+            end
+            
+            -- Monitor state changes
+            local currentState = humanoid:GetState()
+            if currentState == Enum.HumanoidStateType.Dead or
+               currentState == Enum.HumanoidStateType.Dying or
+               currentState == Enum.HumanoidStateType.Freefall then
+                if currentState == Enum.HumanoidStateType.Dead then
+                    humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    humanoid.Health = humanoid.MaxHealth
+                end
+            end
+            
+            -- Ensure max health is set
+            if humanoid.MaxHealth < 100 then
+                humanoid.MaxHealth = 100
+            end
+        end
+        wait(0.05)
+    end
+end
+
+-- ============================================================
+-- PROTECTION 6: ANTI-DISCONNECT METATABLE
+-- ============================================================
+local function antiDisconnectMetatable()
+    local success = pcall(function()
+        local mt = getrawmetatable(player)
+        if not mt then return end
+        
+        setreadonly(mt, false)
+        
+        local oldNamecall = mt.__namecall
+        if oldNamecall then
+            mt.__namecall = function(self, ...)
+                local args = {...}
+                local method = args[#args]
+                
+                if self == player then
+                    if tostring(method):lower() == "kick" then
+                        return nil
+                    end
+                end
+                
+                return oldNamecall(self, ...)
+            end
+        end
+        
+        setreadonly(mt, true)
+    end)
+    
+    if success then
+        -- Metatable protection applied
+    end
+end
+
+-- ============================================================
+-- PROTECTION 7: POSITION LOCK (Anti-Teleport)
+-- ============================================================
+local function positionLock()
+    RunService.Heartbeat:Connect(function()
+        if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+        
+        local currentPos = humanoidRootPart.Position
+        local lastPos = lastSafePosition.Position
+        local distance = (currentPos - lastPos).Magnitude
+        
+        -- If teleported more than 150 studs instantly
+        if distance > 150 then
+            if humanoid.MoveVector.Magnitude < 1 then
+                humanoidRootPart.CFrame = lastSafePosition
+                wait(0.2)
+                return
+            end
+        end
+        
+        -- Update safe position when moving normally
+        if distance < 30 then
+            lastSafePosition = humanoidRootPart.CFrame
+        end
+    end)
+end
+
+-- ============================================================
+-- PROTECTION 8: VELOCITY MANAGER
+-- ============================================================
+local function velocityManager()
+    while true do
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            local vel = humanoidRootPart.AssemblyLinearVelocity
+            
+            -- If falling at extreme speed (death trap)
+            if vel.Y < -150 then
+                humanoidRootPart.AssemblyLinearVelocity = Vector3.new(vel.X, -50, vel.Z)
+                humanoid.Health = humanoid.MaxHealth
+            end
+            
+            -- If moving at extreme speed horizontally (teleport)
+            if vel.Magnitude > 300 and humanoid.MoveVector.Magnitude < 1 then
+                humanoidRootPart.AssemblyLinearVelocity = Vector3.new(0, vel.Y, 0)
+            end
+        end
+        wait(0.05)
+    end
+end
+
+-- ============================================================
+-- PROTECTION 9: HUMANOID MAX HEALTH LOCK
+-- ============================================================
+local function humanoidMaxHealthLock()
+    while true do
+        if humanoid and humanoid.Parent then
+            if humanoid.MaxHealth ~= 100 then
+                humanoid.MaxHealth = 100
+            end
+            if humanoid.Health > humanoid.MaxHealth then
+                humanoid.Health = humanoid.MaxHealth
+            end
+            if humanoid.Health <= 0 then
+                humanoid.Health = humanoid.MaxHealth
+            end
+        end
+        wait(0.1)
+    end
+end
+
+-- ============================================================
+-- PROTECTION 10: REMOTE KICK BLOCK
+-- ============================================================
+local function blockRemoteKicks()
+    local success = pcall(function()
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        
+        -- Block existing remotes
+        for _, descendant in pairs(ReplicatedStorage:GetDescendants()) do
+            if descendant:IsA("RemoteEvent") or descendant:IsA("RemoteFunction") then
+                if descendant.Name:lower():find("kick") or 
+                   descendant.Name:lower():find("ban") or
+                   descendant.Name:lower():find("remove") or
+                   descendant.Name:lower():find("disconnect") then
+                    
+                    pcall(function()
+                        if descendant:IsA("RemoteEvent") then
+                            descendant.OnClientEvent:Connect(function()
+                                return nil
+                            end)
+                        end
+                    end)
+                end
+            end
+        end
+        
+        -- Block new remotes as they're added
+        ReplicatedStorage.DescendantAdded:Connect(function(descendant)
+            if descendant:IsA("RemoteEvent") then
+                if descendant.Name:lower():find("kick") then
+                    pcall(function()
+                        descendant.OnClientEvent:Connect(function()
+                            return nil
+                        end)
+                    end)
+                end
+            end
+        end)
+    end)
+    
+    return success
+end
+
+-- ============================================================
+-- PROTECTION 11: CHARACTER DESTRUCTION BLOCK
+-- ============================================================
+local function blockCharacterDestruction()
+    local success = pcall(function()
+        local charMt = getrawmetatable(character)
+        if not charMt then return end
+        
+        setreadonly(charMt, false)
+        
+        local oldNewIndex = charMt.__newindex
+        if oldNewIndex then
+            charMt.__newindex = function(self, key, value)
+                if key == "Parent" and value == nil then
+                    return nil
+                end
+                return oldNewIndex(self, key, value)
+            end
+        end
+        
+        setreadonly(charMt, true)
+    end)
+    
+    return success
+end
+
+-- ============================================================
+-- PROTECTION 12: IMMORTALITY CORE
+-- ============================================================
+local function immortalityCore()
+    humanoid.HealthChanged:Connect(function()
+        if humanoid.Health <= 0 then
+            humanoid.MaxHealth = 100
+            humanoid.Health = 100
+        end
+    end)
+    
+    RunService.Heartbeat:Connect(function()
+        if humanoid and humanoid.Parent then
+            if humanoid.Health < humanoid.MaxHealth then
+                humanoid.Health = humanoid.MaxHealth
+            end
+            if humanoid.Health <= 0 then
+                humanoid.Health = humanoid.MaxHealth
+            end
+        end
+    end)
+end
+
+-- ============================================================
+-- PROTECTION 13: CONTINUOUS KICK MONITORING
+-- ============================================================
+local function monitorKickAttempts()
+    local lastCharacterTime = tick()
+    
+    player.CharacterAdded:Connect(function()
+        local currentTime = tick()
+        local timeSinceLastSpawn = currentTime - lastCharacterTime
+        
+        if timeSinceLastSpawn < 2 then
+            kickAttemptCount = kickAttemptCount + 1
+        end
+        
+        lastCharacterTime = currentTime
+    end)
+end
+
+-- ============================================================
+-- PROTECTION 14: FALL DAMAGE PREVENTION
+-- ============================================================
+local function preventFallDamage()
+    while true do
+        if character and humanoid and humanoid.Parent then
+            local vel = humanoidRootPart.AssemblyLinearVelocity
+            
+            if vel.Y < -50 then
+                humanoid.Health = humanoid.MaxHealth
+            end
+        end
+        wait(0.05)
+    end
+end
+
+-- ============================================================
+-- PROTECTION 15: WORKSPACE MONITORING
+-- ============================================================
+local function monitorWorkspace()
+    while true do
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            -- Check if character is still in workspace
+            if character.Parent ~= Workspace then
+                character.Parent = Workspace
+            end
+            
+            -- Check if humanoid still exists
+            if not character:FindFirstChild("Humanoid") then
+                local newHumanoid = Instance.new("Humanoid")
+                newHumanoid.Parent = character
+                humanoid = newHumanoid
+            end
+        end
+        wait(0.5)
+    end
+end
+
+-- ============================================================
+-- MAIN ACTIVATION
+-- ============================================================
+local function activateAllProtections()
+    -- Core protections
+    task.spawn(function() coreHealthProtection() end)
+    task.spawn(function() coreDeathStateBlock() end)
+    task.spawn(function() coreCharacterRespawn() end)
+    task.spawn(function() coreHumanoidLock() end)
+    task.spawn(function() coreStateMonitor() end)
+    
+    -- Secondary protections
+    task.spawn(function() positionLock() end)
+    task.spawn(function() velocityManager() end)
+    task.spawn(function() humanoidMaxHealthLock() end)
+    task.spawn(function() immortalityCore() end)
+    task.spawn(function() monitorKickAttempts() end)
+    task.spawn(function() preventFallDamage() end)
+    task.spawn(function() monitorWorkspace() end)
+    
+    -- Metatable protections
+    pcall(function() antiDisconnectMetatable() end)
+    pcall(function() blockCharacterDestruction() end)
+    pcall(function() blockRemoteKicks() end)
+end
+
+-- ============================================================
+-- START SYSTEM
+-- ============================================================
+activateAllProtections()
+
+-- Silent operation - no messages printed
